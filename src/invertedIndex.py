@@ -9,6 +9,7 @@ License: MIT License
 import sys
 import re
 import gzip
+from glob import glob
 import io
 from os.path import expanduser
 # from porterStemmer import PorterStemmer
@@ -131,6 +132,10 @@ class InvertedIndex:
 
 #         f.close()
 
+    def mergeIndices(self):
+        files = glob(self.index + "*")
+        handles = map(open, files)
+
     def getParams(self):
         '''get the parameters stopwords file, collection file, and the output index file'''
         param = sys.argv
@@ -143,7 +148,7 @@ class InvertedIndex:
 #         for doc in open(home+"/data/documents.list",  'r'):
 #             yield doc
 
-    def buildIndex(self, blockSize=100000000):
+    def buildIndex(self, blockSize=10000):
         '''main of the program, creates the index'''
         
 #         files = []
