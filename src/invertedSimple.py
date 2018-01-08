@@ -23,12 +23,13 @@ from tables.tests.test_indexvalues import BuffersizeMultipleChunksize
 
 class InvertedSimple:
 
-    def __init__(self, doclist, out):
+    def __init__(self, wdir):
 #         self.index = defaultdict(list)  # the inverted index
         
-        self.home = expanduser("~")
-        self.index = self.home + out
-        self.doclist = self.home + doclist
+        #self.home = expanduser("~")
+        #self.out = self.home + out + ".gz"
+        #self.doclist = self.home + doclist
+        self.lexicon = {}
         
     def stopwords(self):
         '''get stopwords from the stopwords file'''
@@ -116,22 +117,25 @@ class InvertedSimple:
 
         return parsedDoc
 
-    def write(self):
+    def writeIndex(self):
  
-        with gzip.open(self.index, 'wb') as f:
-            print("writing")
-            for token, postings in sorted(dict.items()):
-    #             postinglist = []
-#                 for posting in postings:
+        with gzip.open(wdir + '/output/simple-index.gz', 'wt') as f:
+            print("writing index")
+            for token, postings in sorted(self.index.items()):
                 print(token + '\t' + ' '.join(map(str, postings)))
+                offset = f.tell()
                 f.write(token + '\t' + ' '.join(map(str, postings)) + '\n')
-#                     docID = p[0]
-#                     positions = p[1]
-#                     postinglist.append(':'.join([str(docID), ','.join(map(str, positions))]))
-#                 print >> f, ''.join((term, '|', ';'.join(postinglist)))
+                self.index[token] = offset
 
-#         f.close()
-
+    def writeOffsets(self):
+ 
+        with gzip.open(wdir + '/output/offsets.gz', 'wt') as f:
+            print("writing offsets")
+            for token, offset in sorted(self.index.items()):
+                print(token + '\t' + str(offset) + '\n')
+                f.write(token + '\t' + str(offset) + '\n')
+                
+    
     def mergeIndices(self):
         files = glob(self.index + "*")
         handles = map(open, files)
@@ -143,56 +147,30 @@ class InvertedSimple:
         self.collectionFile = param[2]
         self.indexFile = param[3]
 
-#     def nextDocument(self):
-#                 
-#         for doc in open(home+"/data/documents.list",  'r'):
-#             yield doc
+
 
     def buildIndex(self):
         '''main of the program, creates the index'''
         
-#         files = []
-        # docsList = files.readall(files) 
-#         /code/search-engine/input/testdoc.txt
-
         index = {}
-#         home = expanduser("~")
         gc.enable()
-
-        dict = defaultdict(lambda: array('I'))    # init dict
-
-#         for doc in oen(home+"/data/documents.list",  'r'):
-#             
-#             while i < len(tokenStream):
-
-                # Process next block
-#                 bufferSize = 0   # total words processed per block
-                     
-        for doc in open(self.doclist, 'rt'):
-#              open(home+"/data/documents.list",  'r'):
-  
-            self.index = defaultdict(lambda: array('I'))  # current dict
- 
-                         
-                        # Get next file from documents.list
+        self.index = defaultdict(lambda: array('I'))    # main dict
+        for doc in open(wdir + 'documents.list', 'rt'):
             fname = doc.rstrip()  # documents/LN-20020102023.vert
-            path = self.home + "/data/" + fname + ".gz"
-#             files.append(f)
+            path = wdir + fname
             f = gzip.open(path, 'rt')
 
             # Parse file into sections and append text
             parsedDoc = self.parseDoc(f)  # returns a dictionary of parsed xml sections
             text = ''.join([v for k, v in parsedDoc.items() if v is not None and k != "docid"])
-#                     docid = int(parsedDoc["docid"])
-            docid = ''
-            if parsedDoc['docid'][0] == 'L':
+            docid = parsedDoc["docid"]
+            if docid[0] == 'L':
                 docid = '1' + docid[7:]     # begins with LN
             else:
                 docid = '2' + docid[7:]     # begins with MF
 
             docid = int(docid)
-#             print(text)
-#             print(docid)
+            print("processing doc " + str(docid))
 
             pattern = (r"^[0-9]+\s+"  # word number
                "([a-zěščřžťďňńáéíýóůA-ZĚŠČŘŽŤĎŇŃÁÉÍÝÓŮ]+)[0-9]*\s+"  # form
@@ -200,35 +178,29 @@ class InvertedSimple:
                "[A-ZĚŠČŘŽŤĎŇŃÁÉÍÝÓŮ0-9-=]+\s+"
                "[a-zěščřžťďňńáéíýóůA-ZĚŠČŘŽŤĎŇŃÁÉÍÝÓŮ]+$")
 
-#                     print(text)
             tokens = re.findall(pattern, text, re.MULTILINE)
-            i = 0  # pos in stream
-
             for token in tokens:
-
-                # Process next block
-#                         n = 0   # total words processed per block
-#                         dict = defaultdict(lambda: array('I'))    # current dict
-#                         while n < blockSize:
-#                         token = tokenStream[i]
-                if token not in dict:
-                    self.index[token].append(docid)  # append a new entry and postings list
-                    
-                else:
-                    postings = self.index[token]
-                    if docid not in postings:
-                        postings.append(docid)
-                    del postings
-                                             # this is the amortized size which depends on implementation
-                                             
-        self.write()
-        
+               if token not in self.index:
+                   self.index[token].append(docid)  # append a new entry and postings list
+                   #self.lexicon[token].append(token) 
+               else:
+                   
+                   postings = self.index[token]
+                   if docid not in postings:
+                      postings.append(docid)
+                   del postings
+                   
+   
+        self.writeIndex()
+        self.writeOffsets()
 
 if __name__ == "__main__":
-#     home = expanduser("~")
-    doclist = "/data/documents.list"
-    out = "/data/output/index-simple"
-    index = InvertedSimple(doclist, out)
+    home = expanduser("~")
+
+    #doclist = "/data/test/documents.list"
+    #out = "/data/test/output/index-simple"
+    wdir = home + "/data/"
+    index = InvertedSimple(wdir)
     index.buildIndex()
      
 
