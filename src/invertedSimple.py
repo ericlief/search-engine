@@ -17,7 +17,7 @@ from collections import defaultdict
 from array import array
 import gc
 from tables.tests.test_indexvalues import BuffersizeMultipleChunksize
-
+from collections import Counter
 # porter=PorterStemmer()
 
 
@@ -122,9 +122,16 @@ class InvertedSimple:
         with gzip.open(wdir + '/output/simple-index.gz', 'wt') as f:
             print("writing index")
             for token, postings in sorted(self.index.items()):
-                print(token + '\t' + ' '.join(map(str, postings)))
+                df = len(postings)
+                postings = [self.splitInts(post) for post in postings]
+                postings = [str(self.expandDocid(x)) + ',' + str(y) for x, y in postings]
+#                 print(post)
+#                 print(list(map(self.splitInts, postings)))
+#                 print(token + '\t' + ' '.join(map(str, map(self.splitInts, postings))))
+#                 print(token + '\t' + str(df) + '\t' + ' '.join(postings))
+
                 offset = f.tell()
-                f.write(token + '\t' + ' '.join(map(str, postings)) + '\n')
+                f.write(token + '\t' + str(df) + '\t' + ' '.join(postings) + '\n')
                 self.index[token] = offset
 
     def writeOffsets(self):
@@ -132,7 +139,7 @@ class InvertedSimple:
         with gzip.open(wdir + '/output/offsets.gz', 'wt') as f:
             print("writing offsets")
             for token, offset in sorted(self.index.items()):
-                print(token + '\t' + str(offset) + '\n')
+#                 print(token + '\t' + str(offset) + '\n')
                 f.write(token + '\t' + str(offset) + '\n')
                 
     
@@ -147,30 +154,56 @@ class InvertedSimple:
         self.collectionFile = param[2]
         self.indexFile = param[3]
 
+    def combineInts(self, x, y):
+        hi = x << 32
+        lo = y & 0x0000FFFF
+        return hi | lo
 
+    def splitInts(self, z):
+        x = z >> 32
+        y = z & 0x0000FFFF
+#         return str(x) + ',' + str(y)
+        return x, y
+
+    def truncateDocid(self, docid):
+        if docid[0] == 'L':
+            docid = '1' + docid[7:]  # begins with LN
+        else:
+            docid = '2' + docid[7:]  # begins with MF
+
+        return int(docid)
+
+    def expandDocid(self, docid):
+        docid = str(docid)
+        if docid[0] == '1':
+            docid = 'LN-2002' + docid[1:]  # begins with LN
+        else:
+            docid = 'MF-2002' + docid[1:]  # begins with MF
+
+        return docid
 
     def buildIndex(self):
         '''main of the program, creates the index'''
         
-        index = {}
         gc.enable()
-        self.index = defaultdict(lambda: array('I'))    # main dict
+        self.index = defaultdict(lambda: array('L'))  # main dict
         for doc in open(wdir + 'documents.list', 'rt'):
             fname = doc.rstrip()  # documents/LN-20020102023.vert
             path = wdir + fname
-            f = gzip.open(path, 'rt')
+            f = gzip.open(path + '.gz', 'rt')
 
             # Parse file into sections and append text
             parsedDoc = self.parseDoc(f)  # returns a dictionary of parsed xml sections
             text = ''.join([v for k, v in parsedDoc.items() if v is not None and k != "docid"])
             docid = parsedDoc["docid"]
-            if docid[0] == 'L':
-                docid = '1' + docid[7:]     # begins with LN
-            else:
-                docid = '2' + docid[7:]     # begins with MF
-
-            docid = int(docid)
-            print("processing doc " + str(docid))
+#             if docid[0] == 'L':
+#                 docid = '1' + docid[7:]     # begins with LN
+#             else:
+#                 docid = '2' + docid[7:]     # begins with MF
+#
+#             docid = int(docid)
+            docid = self.truncateDocid(docid)
+#             print("processing doc " + str(docid))
 
             pattern = (r"^[0-9]+\s+"  # word number
                "([a-zěščřžťďňńáéíýóůA-ZĚŠČŘŽŤĎŇŃÁÉÍÝÓŮ]+)[0-9]*\s+"  # form
@@ -179,18 +212,23 @@ class InvertedSimple:
                "[a-zěščřžťďňńáéíýóůA-ZĚŠČŘŽŤĎŇŃÁÉÍÝÓŮ]+$")
 
             tokens = re.findall(pattern, text, re.MULTILINE)
-            for token in tokens:
-               if token not in self.index:
-                   self.index[token].append(docid)  # append a new entry and postings list
-                   #self.lexicon[token].append(token) 
-               else:
-                   
-                   postings = self.index[token]
-                   if docid not in postings:
-                      postings.append(docid)
-                   del postings
-                   
-   
+            counts = Counter(tokens)
+            
+#             print(counts)
+
+            for token, cnt in counts.items():
+                idPlusTf = self.combineInts(docid, cnt)
+#                 if token not in self.index:
+                self.index[token].append(idPlusTf)  # append a new entry and postings list
+                    #self.lexicon[token].append(token) 
+
+#                 else:
+#                     self.index[token].append(idPlusTf)
+#                   if docid not in postings:
+#                     postings.append(idPlusTf)
+#                     del postings
+            gc.collect()
+
         self.writeIndex()
         self.writeOffsets()
 
