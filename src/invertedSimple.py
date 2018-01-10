@@ -5,7 +5,7 @@ License: MIT License
 '''
 
 #!/usr/bin/env python
-
+import math
 import sys
 import re
 import gzip
@@ -30,6 +30,7 @@ class InvertedSimple:
         #self.out = self.home + out + ".gz"
         #self.doclist = self.home + doclist
         self.lexicon = {}
+        self.wdir = wdir
         
     def stopwords(self):
         '''get stopwords from the stopwords file'''
@@ -66,7 +67,7 @@ class InvertedSimple:
         print(terms)
         
         return terms
-#         form = terms.group(2) i 
+#         form = terms.group(2) i
 #         lemma = terms.group(3)
 #         tag = terms.group(4)
 #         parent = terms.group(5)
@@ -84,38 +85,51 @@ class InvertedSimple:
 #         return form, lemma
 
     def parseDoc(self, f):
-        ''' returns the id, title and text of the next page in the collection '''
-#         doc = []
-#         for line in doc:
-#             if line == '</DOC>\n':
-#                 break
-#             doc.append(line)
-# 
-#         curPage = ''.join(doc)
-        
+        ''' returns the id, title, heading and text of a document '''
+#
         doc = f.readlines()
         doc = ''.join(doc)
                 
-#          
-#         print("orig doc")
-#         print(doc)
-
         docid = re.search('<DOCID>(.*)</DOCID>', doc, re.DOTALL)
         title = re.search('<TITLE>(.*)</TITLE>', doc, re.DOTALL)
         head = re.search('<HEADING>(.*)</HEADING>', doc, re.DOTALL)
         text = re.search('<TEXT>(.*)</TEXT>', doc, re.DOTALL)
 #         print(docid.group(1))
 #         print(title.group(1))
-        if docid == None or (title == None and head == None and text == None):
+        if docid is None or (title is None and head is None and text is None):
             raise IOError("document file does not conform to format")
 
         parsedDoc = {}
         parsedDoc['docid'] = docid.group(1) 
         parsedDoc['title'] = title.group(1) if title else None
-        parsedDoc['head'] = head.group(1) if head else None 
+        parsedDoc['head'] = head.group(1) if head else None
         parsedDoc['text'] = text.group(1) if text else None
 
         return parsedDoc
+        
+    def parseTopic(self, topic):
+        ''' returns the title, description and narrative of the topic/query'''
+        
+        with open(wdir + topic, 'rt') as f:
+
+#         topic = f.readlines()
+#         topic = ''.join(topic)
+#
+            topic = f.read()
+            title = re.search('<title>(.*)</title>', topic, re.DOTALL)
+            desc = re.search('<desc>(.*)</desc>', topic, re.DOTALL)
+            narr = re.search('<narr>(.*)</narr>', topic, re.DOTALL)
+    #         print(docid.group(1))
+    #         print(title.group(1))
+            if title is None or (desc is None and narr is None):
+                raise IOError("topic file does not conform to format")
+
+            parsedTopic = {}
+            parsedTopic['title'] = title.group(1)
+            parsedTopic['desc'] = desc.group(1) if desc else None
+            parsedTopic['narr'] = narr.group(1) if narr else None
+
+            return parsedTopic
 
     def writeIndex(self):
  
@@ -182,6 +196,26 @@ class InvertedSimple:
 
         return docid
 
+    def getPostings(self, offset, index):
+        with gzip.open(index, 'rt') as f:
+            f.seek(offset)
+            line = f.readline()
+            print(line)
+            return line
+        
+    def calculateWeightQuery(self, term, method=None):
+        if not method:
+            return 1    # boolean method
+        else:
+            pass
+    
+    def cosineScore(self, query):
+        
+        pass
+        
+
+        
+        
     def buildIndex(self):
         '''main of the program, creates the index'''
         
@@ -213,7 +247,6 @@ class InvertedSimple:
 
             tokens = re.findall(pattern, text, re.MULTILINE)
             counts = Counter(tokens)
-            
 #             print(counts)
 
             for token, cnt in counts.items():
@@ -227,18 +260,133 @@ class InvertedSimple:
 #                   if docid not in postings:
 #                     postings.append(idPlusTf)
 #                     del postings
+            del tokens
+            del counts
+
             gc.collect()
 
         self.writeIndex()
         self.writeOffsets()
 
+    def calculateDocLen(self):
+        '''main of the program, creates the index'''
+
+        gc.enable()
+        lengths = {}  # main dict
+        for doc in open(wdir + 'documents.list', 'rt'):
+            fname = doc.rstrip()  # documents/LN-20020102023.vert
+            path = wdir + fname
+            f = gzip.open(path, 'rt')
+#             f = gzip.open(path + '.gz', 'rt')
+
+            # Parse file into sections and append text
+            parsedDoc = self.parseDoc(f)  # returns a dictionary of parsed xml sections
+            text = ''.join([v for k, v in parsedDoc.items() if v is not None and k != "docid"])
+            docid = parsedDoc["docid"]
+#             if docid[0] == 'L':
+#                 docid = '1' + docid[7:]     # begins with LN
+#             else:
+#                 docid = '2' + docid[7:]     # begins with MF
+#
+#             docid = int(docid)
+            print(docid)
+            print(text)
+
+            docid = self.truncateDocid(docid)
+#             print("processing doc " + str(docid))
+
+            pattern = (r"^[0-9]+\s+"  # word number
+               "([a-zěščřžťďňńáéíýóůA-ZĚŠČŘŽŤĎŇŃÁÉÍÝÓŮ]+)[0-9]*\s+"  # form
+               "[a-zěščřžťďňńáéíýóůA-ZĚŠČŘŽŤĎŇŃÁÉÍÝÓŮ]+[0-9]*[-_]?.*\s+"  # lemma
+               "[A-ZĚŠČŘŽŤĎŇŃÁÉÍÝÓŮ0-9-=]+\s+"
+               "[a-zěščřžťďňńáéíýóůA-ZĚŠČŘŽŤĎŇŃÁÉÍÝÓŮ]+$")
+
+            tokens = re.findall(pattern, text, re.MULTILINE)
+            counts = Counter(tokens)
+            print(counts)
+
+#             print(counts)
+            length = 0
+            for token, cnt in counts.items():
+                length += cnt * cnt
+            lengths[docid] = math.sqrt(length)
+            del tokens
+            del counts
+            gc.collect()
+
+            break
+        
+        with gzip.open(wdir + '/output/lengths.gz', 'wt') as f:
+            print("writing doc length")
+            for docid, length in lengths.items():
+                print(self.expandDocid(docid) + '\t' + str(length) + '\n')
+                f.write(self.expandDocid(docid) + '\t' + str(length) + '\n')
+                f.write(text)
+
+    
 if __name__ == "__main__":
     home = expanduser("~")
 
-    #doclist = "/data/test/documents.list"
-    #out = "/data/test/output/index-simple"
-    wdir = home + "/data/"
+    # doclist = "/data/test/documents.list"
+    # out = "/data/test/output/index-simple"
+    wdir = home + "/data/test/"
     index = InvertedSimple(wdir)
-    index.buildIndex()
-     
+#     print(sys.argv)
+    if sys.argv[1] == '-b':
+        index.buildIndex()
 
+    if sys.argv[1] == '-r' and sys.argv[2]:
+        offset = int(sys.argv[2])
+        if len(sys.argv) == 4:
+            f = sys.argv[3]
+            index.getPostings(offset, f)
+        else:
+            f = wdir + 'output/index.gz'
+            index.getPostings(offset, f)
+
+    if sys.argv[1] == '-l':
+        index.calculateDocLen()
+
+    # Train
+    if  sys.argv[1] == '-t':
+                    
+        # Get word offsets list
+        offsets = {}
+        with gzip.open(wdir + 'output/offsets.gz', 'rt') as f:
+            for line in f:
+                word, offset = line.rstrip().split()
+                offsets[word] = int(offset)
+
+        with open(wdir + 'train-topics.list', 'rt') as topicsList:
+            with gzip.open(wdir + 'output/index.gz', 'rt') as indexFile:
+
+                # Get query terms for a topics list
+                for line in topicsList:
+                    topic = line.rstrip()
+                    parsedTopic = index.parseTopic(topic)
+#                     print(parsedTopic)
+                    title = parsedTopic['title']
+
+                    pattern = (r"^[0-9]+\s+"  # word number
+                       "([a-zěščřžťďňńáéíýóůA-ZĚŠČŘŽŤĎŇŃÁÉÍÝÓŮ]+)[0-9]*\s+"  # form
+                       "[a-zěščřžťďňńáéíýóůA-ZĚŠČŘŽŤĎŇŃÁÉÍÝÓŮ]+[0-9]*[-_]?.*\s+"  # lemma
+                       "[A-ZĚŠČŘŽŤĎŇŃÁÉÍÝÓŮ0-9-=]+\s+"
+                       "[a-zěščřžťďňńáéíýóůA-ZĚŠČŘŽŤĎŇŃÁÉÍÝÓŮ]+$")
+
+                    terms = re.findall(pattern, title, re.MULTILINE)
+#                     print(terms)
+
+                    # For each query term calculate weight
+                    for term in terms:
+                        wt = index.calculateWeightQuery(term)
+                        if term in offsets:
+                            offset = offsets[term]
+                            print("getting {} at {}".format(term, offset))
+                            indexFile.seek(offset)
+                            line = indexFile.readline().rstrip().split()
+#                             print(line)
+                            df = line[1]
+                            postings = line[2:]
+#                             print(df, postings)
+                        else:
+                            print("Word {} not in index. Skipping...".format(term))
