@@ -42,7 +42,7 @@ class InvertedSimple:
     def parseWords(self, line):
         '''given a stream of text, get the terms from the text'''
         #line = line.lower()
-        print(line)
+
 #         terms = re.findall("^[0-9]+\b+([a-zA-Z])*[0-9]*\b+([a-zA-Z]+)[0-9]*[-_]?.*\b+([A-Z0-9-]+)\b+([0-9])+\b([a-zA-Z]+)$", line, re.DOTALL)
 #         terms = re.findall("^[0-9]+\s+([a-zěščřžťďňńáéíýóůA-ZĚŠČŘŽŤĎŇŃÁÉÍÝÓŮ]+)[0-9]*\s+([a-zěščřžýáíéůA-ZĚŠČŘŽÝÁÍÉŮ]+)[0-9]*[-_]?.*\s+([A-ZĚŠČŘŽÝÁÍÉŮ0-9-=]+)\s+([0-9])+\s+([a-zěščřžýáíéůA-ZĚŠČŘŽÝÁÍÉŮ]+)$", line, re.DOTALL)
 #         terms = re.findall("^([0-9]+)\s+([a-zA-Z]*)[0-9]*\\s+)",line, re.DOTALL)
@@ -87,25 +87,24 @@ class InvertedSimple:
     def parseDoc(self, f):
         ''' returns the id, title, heading and text of a document '''
 #
-        doc = f.readlines()
-        doc = ''.join(doc)
-                
-        docid = re.search('<DOCID>(.*)</DOCID>', doc, re.DOTALL)
-        title = re.search('<TITLE>(.*)</TITLE>', doc, re.DOTALL)
-        head = re.search('<HEADING>(.*)</HEADING>', doc, re.DOTALL)
-        text = re.search('<TEXT>(.*)</TEXT>', doc, re.DOTALL)
+        text = f.read()
+        docidMatch = re.search('<DOCID>(.*)</DOCID>', text, re.DOTALL)
+        docid = docidMatch.group(1)
+#         title = re.search('<TITLE>(.*)</TITLE>', doc, re.DOTALL)
+#         head = re.search('<HEADING>(.*)</HEADING>', doc, re.DOTALL)
+#         text = re.search('<TEXT>(.*)</TEXT>', doc, re.DOTALL)
 #         print(docid.group(1))
 #         print(title.group(1))
-        if docid is None or (title is None and head is None and text is None):
-            raise IOError("document file does not conform to format")
+#         if docid is None or (title is None and head is None and text is None):
+#             raise IOError("document file does not conform to format")
 
-        parsedDoc = {}
-        parsedDoc['docid'] = docid.group(1) 
-        parsedDoc['title'] = title.group(1) if title else None
-        parsedDoc['head'] = head.group(1) if head else None
-        parsedDoc['text'] = text.group(1) if text else None
+#         parsedDoc = {}
+#         parsedDoc['docid'] = docid.group(1)
+#         parsedDoc['title'] = title.group(1) if title else None
+#         parsedDoc['head'] = head.group(1) if head else None
+#         parsedDoc['text'] = text.group(1) if text else None
 
-        return parsedDoc
+        return docid, text
         
     def parseTopic(self, topic):
         ''' returns the title, description and narrative of the topic/query'''
@@ -133,7 +132,7 @@ class InvertedSimple:
 
     def writeIndex(self):
  
-        with gzip.open(wdir + '/output/simple-index.gz', 'wt') as f:
+        with gzip.open(wdir + '/output/index.gz', 'wt') as f:
             print("writing index")
             for token, postings in sorted(self.index.items()):
                 df = len(postings)
@@ -180,6 +179,7 @@ class InvertedSimple:
         return x, y
 
     def truncateDocid(self, docid):
+
         if docid[0] == 'L':
             docid = '1' + docid[7:]  # begins with LN
         else:
@@ -200,7 +200,7 @@ class InvertedSimple:
         with gzip.open(index, 'rt') as f:
             f.seek(offset)
             line = f.readline()
-            print(line)
+#             print(line)
             return line
         
     def calculateWeightQuery(self, term, method=None):
@@ -220,22 +220,25 @@ class InvertedSimple:
         '''main of the program, creates the index'''
         
         gc.enable()
-        self.index = defaultdict(lambda: array('L'))  # main dict
+        self.index = defaultdict(lambda: array('L'))  # main index
+        lengths = {}  # for calculating and storing document (cosine) lengths
         for doc in open(wdir + 'documents.list', 'rt'):
             fname = doc.rstrip()  # documents/LN-20020102023.vert
             path = wdir + fname
             f = gzip.open(path + '.gz', 'rt')
 
             # Parse file into sections and append text
-            parsedDoc = self.parseDoc(f)  # returns a dictionary of parsed xml sections
-            text = ''.join([v for k, v in parsedDoc.items() if v is not None and k != "docid"])
-            docid = parsedDoc["docid"]
+#             parsedDoc = self.parseDoc(f)  # returns a dictionary of parsed xml sections
+#             text = ''.join([v for k, v in parsedDoc.items() if v is not None and k != "docid"])
+#             docid = parsedDoc["docid"]
 #             if docid[0] == 'L':
 #                 docid = '1' + docid[7:]     # begins with LN
 #             else:
 #                 docid = '2' + docid[7:]     # begins with MF
 #
 #             docid = int(docid)
+
+            docid, text = self.parseDoc(f)
             docid = self.truncateDocid(docid)
 #             print("processing doc " + str(docid))
 
@@ -249,11 +252,15 @@ class InvertedSimple:
             counts = Counter(tokens)
 #             print(counts)
 
+            length = 0
             for token, cnt in counts.items():
                 idPlusTf = self.combineInts(docid, cnt)
+                length += cnt * cnt  # add sqrd components
+
 #                 if token not in self.index:
                 self.index[token].append(idPlusTf)  # append a new entry and postings list
                     #self.lexicon[token].append(token) 
+            lengths[docid] = math.sqrt(length)  # sqrt
 
 #                 else:
 #                     self.index[token].append(idPlusTf)
@@ -267,6 +274,20 @@ class InvertedSimple:
 
         self.writeIndex()
         self.writeOffsets()
+#
+#                   length = 0
+#             for token, cnt in counts.items():
+#                 length += cnt * cnt
+#             lengths[docid] = math.sqrt(length)
+#             del tokens
+#             del counts
+#             gc.collect()
+#
+        with gzip.open(wdir + '/output/lengths.gz', 'wt') as f:
+            print("writing doc length")
+            for docid, length in lengths.items():
+#                 print(self.expandDocid(docid) + '\t' + str(length) + '\n')
+                f.write(self.expandDocid(docid) + '\t' + str(length) + '\n')
 
     def calculateDocLen(self):
         '''main of the program, creates the index'''
@@ -276,23 +297,24 @@ class InvertedSimple:
         for doc in open(wdir + 'documents.list', 'rt'):
             fname = doc.rstrip()  # documents/LN-20020102023.vert
             path = wdir + fname
-            f = gzip.open(path, 'rt')
+            f = gzip.open(path + '.gz', 'rt')
 #             f = gzip.open(path + '.gz', 'rt')
 
             # Parse file into sections and append text
-            parsedDoc = self.parseDoc(f)  # returns a dictionary of parsed xml sections
-            text = ''.join([v for k, v in parsedDoc.items() if v is not None and k != "docid"])
-            docid = parsedDoc["docid"]
+#             parsedDoc = self.parseDoc(f)  # returns a dictionary of parsed xml sections
+#             text = ''.join([v for k, v in parsedDoc.items() if v is not None and k != "docid"])
+#             docid = parsedDoc["docid"]
 #             if docid[0] == 'L':
 #                 docid = '1' + docid[7:]     # begins with LN
 #             else:
 #                 docid = '2' + docid[7:]     # begins with MF
 #
 #             docid = int(docid)
-            print(docid)
-            print(text)
 
+            docid, text = self.parseDoc(f)
             docid = self.truncateDocid(docid)
+#             print(docid)
+#             print(text)
 #             print("processing doc " + str(docid))
 
             pattern = (r"^[0-9]+\s+"  # word number
@@ -313,15 +335,12 @@ class InvertedSimple:
             del tokens
             del counts
             gc.collect()
-
-            break
         
         with gzip.open(wdir + '/output/lengths.gz', 'wt') as f:
             print("writing doc length")
             for docid, length in lengths.items():
                 print(self.expandDocid(docid) + '\t' + str(length) + '\n')
                 f.write(self.expandDocid(docid) + '\t' + str(length) + '\n')
-                f.write(text)
 
     
 if __name__ == "__main__":
@@ -329,9 +348,11 @@ if __name__ == "__main__":
 
     # doclist = "/data/test/documents.list"
     # out = "/data/test/output/index-simple"
-    wdir = home + "/data/test/"
+    wdir = home + "/data/"
     index = InvertedSimple(wdir)
 #     print(sys.argv)
+
+    # Build index
     if sys.argv[1] == '-b':
         index.buildIndex()
 
