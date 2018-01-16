@@ -18,6 +18,7 @@ from array import array
 import gc
 from tables.tests.test_indexvalues import BuffersizeMultipleChunksize
 from collections import Counter
+import heapq
 # porter=PorterStemmer()
 
 
@@ -106,24 +107,26 @@ class InvertedSimple:
 
         return docid, text
         
-    def parseTopic(self, topic):
+    def parseQuery(self, topic):
         ''' returns the title, description and narrative of the topic/query'''
         
         with open(wdir + topic, 'rt') as f:
 
-#         topic = f.readlines()
-#         topic = ''.join(topic)
-#
             topic = f.read()
+
+            # Perform a regex search on text
+            qid = re.search('<num>(.*)</num>', topic, re.DOTALL)
             title = re.search('<title>(.*)</title>', topic, re.DOTALL)
             desc = re.search('<desc>(.*)</desc>', topic, re.DOTALL)
             narr = re.search('<narr>(.*)</narr>', topic, re.DOTALL)
     #         print(docid.group(1))
     #         print(title.group(1))
-            if title is None or (desc is None and narr is None):
+            if qid is None or (title is None and desc is None and narr is None):
                 raise IOError("topic file does not conform to format")
 
+            # Capture and store groups in a dict
             parsedTopic = {}
+            parsedTopic['qid'] = qid.group(1)
             parsedTopic['title'] = title.group(1)
             parsedTopic['desc'] = desc.group(1) if desc else None
             parsedTopic['narr'] = narr.group(1) if narr else None
@@ -368,9 +371,10 @@ if __name__ == "__main__":
     if sys.argv[1] == '-l':
         index.calculateDocLen()
 
-    # Train
+    # Train with topics list
     if  sys.argv[1] == '-t':
-                    
+
+        runid = 'baseline'
         # Get word offsets list
         offsets = {}
         with gzip.open(wdir + 'output/offsets.gz', 'rt') as f:
@@ -378,36 +382,81 @@ if __name__ == "__main__":
                 word, offset = line.rstrip().split()
                 offsets[word] = int(offset)
 
+        docLengths = {}
+        with gzip.open(wdir + 'output/lengths.gz', 'rt') as f:
+            for line in f:
+                doc, length = line.rstrip().split()
+                docLengths[doc] = float(length)
+        
         with open(wdir + 'train-topics.list', 'rt') as topicsList:
             with gzip.open(wdir + 'output/index.gz', 'rt') as indexFile:
+                with open(wdir + 'results.dat', 'wt') as results:
 
-                # Get query terms for a topics list
-                for line in topicsList:
-                    topic = line.rstrip()
-                    parsedTopic = index.parseTopic(topic)
-#                     print(parsedTopic)
-                    title = parsedTopic['title']
+                    # Get query terms for a topics list
+                    for query in topicsList:
+                        scores = defaultdict(lambda: 0.0)
+                        query = query.rstrip()
+                        parsedQuery = index.parseQuery(query)
 
-                    pattern = (r"^[0-9]+\s+"  # word number
-                       "([a-zěščřžťďňńáéíýóůA-ZĚŠČŘŽŤĎŇŃÁÉÍÝÓŮ]+)[0-9]*\s+"  # form
-                       "[a-zěščřžťďňńáéíýóůA-ZĚŠČŘŽŤĎŇŃÁÉÍÝÓŮ]+[0-9]*[-_]?.*\s+"  # lemma
-                       "[A-ZĚŠČŘŽŤĎŇŃÁÉÍÝÓŮ0-9-=]+\s+"
-                       "[a-zěščřžťďňńáéíýóůA-ZĚŠČŘŽŤĎŇŃÁÉÍÝÓŮ]+$")
+                        qid = parsedQuery['qid'].strip()  # number <num> of topic doc
+                        title = parsedQuery['title']  # use for query terms
 
-                    terms = re.findall(pattern, title, re.MULTILINE)
-#                     print(terms)
+                        pattern = (r"^[0-9]+\s+"  # word number
+                           "([a-zěščřžťďňńáéíýóůA-ZĚŠČŘŽŤĎŇŃÁÉÍÝÓŮ]+)[0-9]*\s+"  # form
+                           "[a-zěščřžťďňńáéíýóůA-ZĚŠČŘŽŤĎŇŃÁÉÍÝÓŮ]+[0-9]*[-_]?.*\s+"  # lemma
+                           "[A-ZĚŠČŘŽŤĎŇŃÁÉÍÝÓŮ0-9-=]+\s+"
+                           "[a-zěščřžťďňńáéíýóůA-ZĚŠČŘŽŤĎŇŃÁÉÍÝÓŮ]+$")
 
-                    # For each query term calculate weight
-                    for term in terms:
-                        wt = index.calculateWeightQuery(term)
-                        if term in offsets:
-                            offset = offsets[term]
-                            print("getting {} at {}".format(term, offset))
-                            indexFile.seek(offset)
-                            line = indexFile.readline().rstrip().split()
-#                             print(line)
-                            df = line[1]
-                            postings = line[2:]
-#                             print(df, postings)
-                        else:
-                            print("Word {} not in index. Skipping...".format(term))
+                        terms = re.findall(pattern, title, re.MULTILINE)
+    #                     print("topic terms ", terms)
+
+                        # For each query term calculate weight
+    #                     scores = array('f')
+                        for term in terms:
+                            wt = index.calculateWeightQuery(term)
+                            if term in offsets:
+                                offset = offsets[term]
+    #                             print("getting {} at {}".format(term, offset))
+                                indexFile.seek(offset)
+                                line = indexFile.readline().rstrip().split()
+    #                             print(line)
+                                df = line[1]
+                                postings = line[2:]
+                                postings = [posting.split(',') for posting in postings]
+    #                             print(postings)
+                                for doc, tf in postings:
+    #                                 print(doc, tf)
+                                    scores[doc] += float(tf)
+    #                                 print(doc, scores[doc])
+                            else:
+                                print("Word {} not in index. Skipping...".format(term))
+
+                        # Normalize scores and insert in priority queue
+                        heap = []
+                        for doc, score in scores.items():
+    #                         print(doc, score)
+                            length = docLengths[doc]
+    #                         print("len=", length)
+                            scores[doc] = score / docLengths[doc]  # normalize (cosine)
+    #                         print("norm", scores[doc])
+                #             heapq.heappush(heap, (score, doc))
+
+                        # Write top k scores
+
+                #         k = 1000
+                        topk = heapq.nlargest(250, scores.items(), key=lambda x: x[1])
+    #                     print(topk)
+    #                     with gzip.open(wdir + '/output/top-' + topic[-14:] + '.gz', 'wt') as f:
+#                         with open(wdir + 'results.dat', 'wt') as f:
+
+            #           for i in range(k):
+                        for i, (doc, score) in enumerate(topk):
+            #                 score, doc = heapq.heappop(heap)
+                            res = str(qid) + ' ' + '0 ' + doc + ' ' + str(i) + ' ' + str(score) + ' ' + runid + '\n'
+#                             print(repr(res))
+                            results.write(res)
+                        break
+#         path = wdir + "/documents/MF-20020619203.vert"
+#         f = gzip.open(path + '.gz', 'rt')
+#         docid, text = index.parseDoc(f)
+#         print(text)
