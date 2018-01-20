@@ -1,56 +1,109 @@
-#!/usr/bin/env python
+x#!/usr/bin/env python
 
 import math
 import sys
 import re
 import gzip
+from glob import glob
+import io
 from os.path import expanduser
+# from porterStemmer import PorterStemmer
 from collections import defaultdict
 from array import array
 import gc
+from tables.tests.test_indexvalues import BuffersizeMultipleChunksize
 from collections import Counter
 import heapq
+# porter=PorterStemmer()
+
 
 class InvertedSimple:
 
     def __init__(self, wdir):
-        self.wdir = wdir  # working directory for data
-        self.n = 0  #
+#         self.index = defaultdict(list)  # the inverted index
+
+        #self.home = expanduser("~")
+        #self.out = self.home + out + ".gz"
+        #self.doclist = self.home + doclist
+        self.lexicon = {}
+        self.wdir = wdir
 
     def stopwords(self):
-        """Read stopwords from the stopwords file"""
-        with open(self.wdir + 'stoplist.txt', 'rt') as f:
-            self.stopwords = {line.rstrip() for line in f}
+        '''get stopwords from the stopwords file'''
+        f = open(self.stopwords, 'r')
+        stopwords = [line.rstrip() for line in f]
+        self.stopwords = dict.fromkeys(stopwords)
+        f.close()
 
-    def parseWords(self, text):
-        """Parse all terms in a text, and then preprocess:
-        perform lowercasing and remove stopwords from list"""
+    def parseWords(self, line):
+        '''given a stream of text, get the terms from the text'''
+        #line = line.lower()
 
-        # Use regex to extract wordforms, or lemmas, etc.
-        # Using lemma here
+#         terms = re.findall("^[0-9]+\b+([a-zA-Z])*[0-9]*\b+([a-zA-Z]+)[0-9]*[-_]?.*\b+([A-Z0-9-]+)\b+([0-9])+\b([a-zA-Z]+)$", line, re.DOTALL)
+#         terms = re.findall("^[0-9]+\s+([a-zěščřžťďňńáéíýóůA-ZĚŠČŘŽŤĎŇŃÁÉÍÝÓŮ]+)[0-9]*\s+([a-zěščřžýáíéůA-ZĚŠČŘŽÝÁÍÉŮ]+)[0-9]*[-_]?.*\s+([A-ZĚŠČŘŽÝÁÍÉŮ0-9-=]+)\s+([0-9])+\s+([a-zěščřžýáíéůA-ZĚŠČŘŽÝÁÍÉŮ]+)$", line, re.DOTALL)
+#         terms = re.findall("^([0-9]+)\s+([a-zA-Z]*)[0-9]*\\s+)",line, re.DOTALL)
+
         pattern = (r"^[0-9]+\s+"  # word number
                    "([a-zěščřžťďňńáéíýóůA-ZĚŠČŘŽŤĎŇŃÁÉÍÝÓŮ]+)[0-9]*\s+" # form
                    "([a-zěščřžťďňńáéíýóůA-ZĚŠČŘŽŤĎŇŃÁÉÍÝÓŮ]+)[0-9]*[-_]?.*\s+"    # lemma
                    "[A-ZĚŠČŘŽŤĎŇŃÁÉÍÝÓŮ0-9-=]+\s+"
                    "[a-zěščřžťďňńáéíýóůA-ZĚŠČŘŽŤĎŇŃÁÉÍÝÓŮ]+$")
 
-        tokens = re.findall(pattern, text, re.MULTILINE)
+# #         to update lemma
+#         pattern = (r"^[0-9]+\s+"  # word number
+#                    "([a-zěščřžťďňńáéíýóůA-ZĚŠČŘŽŤĎŇŃÁÉÍÝÓŮ]+)[0-9]*\s+" # form
+#                    "(.+)\s+"    # lemma
+#                    "[A-ZĚŠČŘŽŤĎŇŃÁÉÍÝÓŮ0-9-=]+\s+"
+#                    "[a-zěščřžťďňńáéíýóůA-ZĚŠČŘŽŤĎŇŃÁÉÍÝÓŮ]+$")
 
-        return tokens
+#         print(pattern)
+
+        terms = re.findall(pattern, line)
+
+        print(terms)
+
+        return terms
+#         form = terms.group(2) i
+#         lemma = terms.group(3)
+#         tag = terms.group(4)
+#         parent = terms.group(5)
+#         deprel = terms.group(6)
+
+#         lines = text.split("\n")
+#             for line in line:
+#                 parseWords()
+#
+
+#         line = re.sub(r'[^a-z0-9 ]', ' ', line)  # put spaces instead of non-alphanumeric characters
+#         line = line.split()
+#         line = [w for w in line if w not in self.stopwords]  # eliminate the stopwords
+# #         line=[ porter.stem(word, 0, len(word)-1) for word in line]
+#         return form, lemma
 
     def parseDoc(self, f):
-        """Parse the docid, title, heading and text of a document as
-        necessary. I used title to compile the title index (tier 1) and
-        text to compile the text index (tier 2)"""
-
+        ''' returns the id, title, heading and text of a document '''
+#
         text = f.read()
         docidMatch = re.search('<DOCID>(.*)</DOCID>', text, re.DOTALL)
         docid = docidMatch.group(1)
+#         title = re.search('<TITLE>(.*)</TITLE>', doc, re.DOTALL)
+#         head = re.search('<HEADING>(.*)</HEADING>', doc, re.DOTALL)
+#         text = re.search('<TEXT>(.*)</TEXT>', doc, re.DOTALL)
+#         print(docid.group(1))
+#         print(title.group(1))
+#         if docid is None or (title is None and head is None and text is None):
+#             raise IOError("document file does not conform to format")
+
+#         parsedDoc = {}
+#         parsedDoc['docid'] = docid.group(1)
+#         parsedDoc['title'] = title.group(1) if title else None
+#         parsedDoc['head'] = head.group(1) if head else None
+#         parsedDoc['text'] = text.group(1) if text else None
 
         return docid, text
 
     def parseQuery(self, topic):
-        """Parse the title, description and narrative of the topic/query"""
+        ''' returns the title, description and narrative of the topic/query'''
 
         with open(wdir + topic, 'rt') as f:
 
@@ -61,7 +114,8 @@ class InvertedSimple:
             title = re.search('<title>(.*)</title>', topic, re.DOTALL)
             desc = re.search('<desc>(.*)</desc>', topic, re.DOTALL)
             narr = re.search('<narr>(.*)</narr>', topic, re.DOTALL)
-
+    #         print(docid.group(1))
+    #         print(title.group(1))
             if qid is None or (title is None and desc is None and narr is None):
                 raise IOError("topic file does not conform to format")
 
@@ -75,14 +129,18 @@ class InvertedSimple:
             return parsedTopic
 
     def writeIndex(self):
-        """Helper method to write index to disk"""
 
-        with gzip.open(wdir + run + '/index.gz', 'wt') as f:
+        with gzip.open(wdir + '/output/index.gz', 'wt') as f:
             print("writing index")
             for token, postings in sorted(self.index.items()):
                 df = len(postings)
                 postings = [self.splitInts(post) for post in postings]
                 postings = [str(self.expandDocid(x)) + ',' + str(y) for x, y in postings]
+#                 print(post)
+#                 print(list(map(self.splitInts, postings)))
+#                 print(token + '\t' + ' '.join(map(str, map(self.splitInts, postings))))
+#                 print(token + '\t' + str(df) + '\t' + ' '.join(postings))
+
                 offset = f.tell()
                 f.write(token + '\t' + str(df) + '\t' + ' '.join(postings) + '\n')
                 self.index[token] = offset
