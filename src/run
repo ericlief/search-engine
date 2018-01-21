@@ -1,0 +1,40 @@
+#!/bin/bash
+
+# Get query list
+if [ $1='-q' ]; then
+   TOPICS=$2
+fi
+# Get doc list   
+if [ $3='-d' ]; then
+   DOCS=$4
+fi
+
+# Get run info
+if [ $5='-r' ]; then
+    RUN_ID=$6
+    echo $RUN_ID
+    RUN=${RUN_ID: -5}  # splice train-run-# to run-#
+fi
+# Get results output file
+if [ $7='-o' ]; then
+   OUT=$8
+fi
+
+# Run train and test for run0
+if [ $RUN == 'run-0' ]; then
+    python3 invertedIndex.py $RUN_ID -q nnc nnc 1000 $TOPICS $DOCS $OUT
+
+# Other runs
+elif [ $RUN == 'run-1' ]; then
+
+    # Run python script for run1
+    python3 invertedIndex.py $RUN_ID -q ltu nnn 1000 $TOPICS $DOCS $OUT -pp   
+
+elif [ $RUN == 'run-2' ]; then
+
+    # Run python script for run2
+    python3 invertedIndex.py $RUN_ID -qt ltu nnn 1000 $TOPICS $DOCS $OUT -pp   
+fi
+
+# Run test suite
+./../../A1/eval/trec_eval -M1000 ../../A1/qrels-train.txt "../output/$OUT"

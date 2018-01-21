@@ -20,9 +20,23 @@ class InvertedIndex:
     functionality such as document lengths, computing scores (tiered and
     untiered"""
 
-    def __init__(self, cwd):
-        self.cwd = cwd  # working directory for data
-        self.n = 0 #
+    def __init__(self, n=0, isTiered=False):
+        # self.cwd = cwd  # working directory for data
+        self.n = n  # initial size (here static)
+        self.isTiered = isTiered  # is this a two-tiered index or not
+        if isTiered:
+            nTiers = 2
+            self.indexes = []
+            for i in range(nTiers):
+                self.indexes.append(defaultdict(lambda: array('L')))
+            assert (self.indexes[0] is not self.indexes[1])
+            # assert (self.indexes[0] != self.indexes[1])
+
+
+            print("tiered", self.indexes)
+        else:
+            self.index = defaultdict(lambda: array('L'))  # main index
+
 
     def stopwords(self):
         """Read stopwords from the stopwords file"""
@@ -36,10 +50,18 @@ class InvertedIndex:
         lowercasing and stopword removal"""
 
         # Use regex to extract wordforms, or lemmas, etc.
-        # Using lemma here
-        pattern = (r"^[0-9]+\s+"  # word number
-           "[a-zěščřžťďňńáéíýóůúA-ZĚŠČŘŽŤĎŇŃÁÉÍÝÓŮÚ]+[0-9]*\s+"  # form
-           "([a-zěščřžťďňńáéíýóůúA-ZĚŠČŘŽŤĎŇŃÁÉÍÝÓŮÚ]+)[0-9]*[-_]?.*\s+"  # lemma
+        # Using lemma here depending on the preprocessing flag pp
+        if pp:
+            pattern = (r"^[0-9]+\s+"  # word number
+           "[a-zěščřžťďňńáéíýóůúA-ZĚŠČŘŽŤĎŇŃÁÉÍÝÓŮÚ]+[0-9]*\s+"
+           "([a-zěščřžťďňńáéíýóůúA-ZĚŠČŘŽŤĎŇŃÁÉÍÝÓŮÚ]+)[0-9]*[-_]?.*\s+"  # use lemma
+           "[A-ZĚŠČŘŽŤĎŇŃÁÉÍÝÓŮÚ0-9-=]+\s+"
+           "[a-zěščřžťďňńáéíýóůúA-ZĚŠČŘŽŤĎŇŃÁÉÍÝÓŮÚ]+$")
+
+        else:
+            pattern = (r"^[0-9]+\s+"  # word number
+           "([a-zěščřžťďňńáéíýóůúA-ZĚŠČŘŽŤĎŇŃÁÉÍÝÓŮÚ]+)[0-9]*\s+"  # use form
+           "[a-zěščřžťďňńáéíýóůúA-ZĚŠČŘŽŤĎŇŃÁÉÍÝÓŮÚ]+[0-9]*[-_]?.*\s+"
            "[A-ZĚŠČŘŽŤĎŇŃÁÉÍÝÓŮÚ0-9-=]+\s+"
            "[a-zěščřžťďňńáéíýóůúA-ZĚŠČŘŽŤĎŇŃÁÉÍÝÓŮÚ]+$")
 
@@ -47,11 +69,13 @@ class InvertedIndex:
 
         # Normalize: lowercase, filter stopwords
         if pp:
-            tokens = [token.lower() for token in tokens if token not in self.stopwords]
+            #tokens = [token.lower() for token in tokens if token not in self.stopwords]
+            tokens = [token.lower() for token in tokens]
 
+        # print(tokens)
         return tokens
 
-    def parseDoc(self, f, title=None):
+    def parseDoc(self, f, title=False):
         """Parse the docid, title, heading and text of a document as
         necessary. I used title to compile the title index (tier 1) and
         text to compile the text index (tier 2)"""
@@ -75,15 +99,15 @@ class InvertedIndex:
 #             if len(textMatch) > 1:
 #                 raise EnvironmentError()
 
-        if docid is None or (title is None and text is None):
-            raise IOError("document file does not conform to format")
+        #if docid is None or text is None:
+        #    raise IOError("document file does not conform to format")
 
         return docid, text  # change for text
 
     def parseQuery(self, topic):
         """Parse the title, description and narrative of the topic/query"""
 
-        with open(cwd + topic, 'rt') as f:
+        with open(topic, 'rt') as f:
 
             topic = f.read()
 
@@ -104,8 +128,6 @@ class InvertedIndex:
             parsedTopic['narr'] = narr.group(1) if narr else None
 
             return parsedTopic
-
-
 
     def combineInts(self, x, y):
         """Helper method to combine a docid and tf integers, so as
@@ -194,7 +216,7 @@ class InvertedIndex:
                 return False
         return True
 
-    def cosineScoreTiered(self, query, docScheme, queryScheme, k):
+    def cosineScoreTiered(self, query, docScheme, queryScheme, k, pp=True):
         """Method for computing the cosine score of a
         query using a tiered index. The algorithm works as follows:
         first level 1 scores are computed. If all k docs are
@@ -208,7 +230,7 @@ class InvertedIndex:
         title = parsedQuery['title']  # use for query terms
 
         # Get terms and normalize length if necessary
-        terms = index.parseWords(title)     # lowercase text, filter stopwords
+        terms = index.parseWords(title, pp)     # lowercase text, filter stopwords
         terms = Counter(terms)              # get counts and store in dict/hash
 
         # For each query term calculate weight
@@ -230,7 +252,7 @@ class InvertedIndex:
                     line = indexes[tier].readline().rstrip().split()
                     df = float(line[1])
                     queryWeight = self.calculateWeightOfTerm(term, tf, df,
-                                         queryScheme, None, tier)  # weight of query
+                                                             queryScheme, doc=None, tier=tier)  # weight of query
                     postings = line[2:]
                     postings = [posting.split(',') for posting in postings]
                     postings = [(doc, int(tf)) for doc, tf in postings]
@@ -277,7 +299,7 @@ class InvertedIndex:
 
                 # Write to disk
                 for i, (doc, score) in enumerate(topKScores):
-                    res = str(qid) + ' ' + '0 ' + doc + ' ' + str(i) + ' ' + str(score) + ' ' + run + '\n'
+                    res = str(qid) + ' ' + '0 ' + doc + ' ' + str(i) + ' ' + str(score) + ' ' + runId + '\n'
                     results.write(res)
                 return topKScores
 
@@ -502,7 +524,7 @@ class InvertedIndex:
                 indexes[tier].seek(offset)
                 line = indexes[tier].readline().rstrip().split()
                 df = float(line[1])
-                wQuery = self.calculateWeightOfTerm(term, tf, df, queryScheme)   # weight of query
+                wQuery = self.calculateWeightOfTerm(term, tf, df, queryScheme, doc=None)  # weight of query
 #                 print("df", df)
 #                 print("w query=", wQuery)
                 postings = line[2:]
@@ -554,16 +576,20 @@ class InvertedIndex:
 
         # Write to disk
         for i, (doc, score) in enumerate(topKScores):
-            res = str(qid) + ' ' + '0 ' + doc + ' ' + str(i) + ' ' + str(score) + ' ' + run + '\n'
+            res = str(qid) + ' ' + '0 ' + doc + ' ' + str(i) + ' ' + str(score) + ' ' + runId + '\n'
             results.write(res)
 
         return topKScores
 
-    def buildIndex(self, tier=None, pp=True):
+    def buildIndex(self, tier=None, tierName=None, pp=True):
         """Build index (indices if tiered)"""
 
         gc.enable()
-        self.index = defaultdict(lambda: array('L'))  # main index
+        if self.isTiered:
+            curIndex = self.indexes[tier]
+        else:
+            curIndex = self.index
+
         lengths = {}  # for calculating and storing document (cosine) lengths
         uniq = {}
         aveTF = {}
@@ -590,11 +616,11 @@ class InvertedIndex:
 #             counts = Counter(tokens)
 
             # First parse and get token counts for each doc
-            docid, counts = self.getTokenCounts(doc, pp)
+            docid, counts = self.getTokenCounts(doc, tier, pp)
             if docid is None or counts is None:
                 continue
             # Add terms to index
-            self.addToIndex(docid, counts)
+            self.addToIndex(docid, counts, tier)
 
             # Calculate normalized doc length
             lengths[docid] = self.calculateDocLen(counts)
@@ -610,15 +636,15 @@ class InvertedIndex:
 
 
         # Write data to disk
-        self.writeIndex(tier)  # write index, creating offsets
-        self.writeOffsets(tier)  # write offsets
-        self.write(lengths, 'lengths', tier)
+        self.writeIndex(tier, tierName)  # write index, creating offsets
+        self.writeOffsets(tier, tierName)  # write offsets
+        self.write(lengths, 'lengths', tierName)
         del lengths
-        self.write(uniq, 'uniq', tier)
+        self.write(uniq, 'uniq', tierName)
         del uniq
-        self.write(aveTF, 'ave-tf', tier)
+        self.write(aveTF, 'ave-tf', tierName)
         del aveTF
-        self.write(maxTF, 'max-tf', tier)
+        self.write(maxTF, 'max-tf', tierName)
         del maxTF
 
 #         # Write doc lengths to disk
@@ -632,7 +658,7 @@ class InvertedIndex:
         # Get rid of garbage
         gc.collect()
 
-    def getTokenCounts(self, doc, pp):
+    def getTokenCounts(self, doc, tier=None, pp=True):
         """Helper method for getting the tokens and their counts
         for a document.
         Returns (docid, counts), where docid is compressed/abbreviated
@@ -642,28 +668,45 @@ class InvertedIndex:
         fname = doc.rstrip()  # documents/LN-20020102023.vert
 #         path = cwd + fname
         f = gzip.open(fname + '.gz', 'rt')
-        docid, text = self.parseDoc(f)
-        if text is None:
-            return None
+
+        # Only parse terms in <TITLE> of doc if tier 0, else parse all of <TEXT>
+        if tier == 0:
+            docid, text = self.parseDoc(f, title=True)
+        else:
+            docid, text = self.parseDoc(f)
+
 
         # Truncate prefix of doc id in order to save space: will expand later
         docid = self.truncateDocid(docid)
 
+        # Most likely no title in text
+        if text is None:
+            # print('no text')
+            return docid, None
+
         # Parse words in doc and preprocess text
         tokens = self.parseWords(text, pp)
         if not tokens:
-            return None
+            return docid, None
 
         return docid, Counter(tokens)
 
-    def addToIndex(self, docid, counts):
-        """Add docid and tfs of a doc in compressed form to index"""
+    def addToIndex(self, docid, counts, tier=None):
+        """Add docid and tfs of a doc in compressed form to index.
+        If tiered, add to current tier index."""
 
         for token, tf in counts.items():
 
             # Combine 32 bit docid and tf into a 64-bit long to save space (recover later)
             idPlusTf = self.combineInts(docid, tf)
-            self.index[token].append(idPlusTf)  # append a new entry and postings list
+            if self.isTiered:
+                self.indexes[tier][token].append(idPlusTf)
+                # for i in range(len(self.indexes)):
+                assert self.indexes[0] is not self.indexes[1]
+                assert self.indexes[0] != self.indexes[1]
+
+            else:
+                self.index[token].append(idPlusTf)  # append a new entry and postings list
 
     def calculateDocLen(self, counts):
         """Computer and write doc length for scoring"""
@@ -716,7 +759,6 @@ class InvertedIndex:
     def calculateNumberUniqTerms(self, counts):
         """Compute number of unique terms in a doc, used in cosine score
         calculation."""
-
 
         return len(counts)
 #         gc.enable()
@@ -837,45 +879,60 @@ class InvertedIndex:
 #         f.close()
 #         gc.collect()
 
-    def writeIndex(self, tier=None):
+    def writeIndex(self, tier=None, tierName=None):
         """Helper method to write index to disk. Once written
         offsets are written to index, later to be written also"""
 
-        if tier:
-            f = gzip.open(cwd + run + '/' + tier + '/index.gz', 'wt')
+        gc.enable()
+
+        if self.isTiered:
+            f = gzip.open(cwd + run + '/' + tierName + '/index.gz', 'wt')
+            curIndex = self.indexes[tier]  # get ref to cur tier index
         else:
             f = gzip.open(cwd + run + '/index.gz', 'wt')
+            curIndex = self.index  # no tier, just index
 
         print("writing index")
-        for token, postings in sorted(self.index.items()):
+        for token, postings in sorted(curIndex.items()):
             df = len(postings)
             postings = [self.splitInts(post) for post in postings]
             postings = [str(self.expandDocid(x)) + ',' + str(y) for x, y in postings]
             offset = f.tell()
             f.write(token + '\t' + str(df) + '\t' + ' '.join(postings) + '\n')
-            self.index[token] = offset  # replace posting with offset
+            curIndex[token] = offset  # replace posting with offset
 
+        # Clean up
         f.close()
+        del curIndex
+        del postings
+        gc.collect()
 
-    def writeOffsets(self, tier=None):
+    def writeOffsets(self, tier=None, tierName=None):
         """Helper method to write byte offsets of term to disk"""
 
-        if tier:
-            f = gzip.open(cwd + run + '/' + tier + '/offsets.gz', 'wt')
+        gc.enable()
+
+        if self.isTiered:
+            f = gzip.open(cwd + run + '/' + tierName + '/offsets.gz', 'wt')
+            curIndex = self.indexes[tier]  # get ref to cur tier index
         else:
             f = gzip.open(cwd + run + '/offsets.gz', 'wt')
+            curIndex = self.index  # no tier, just index
 
         print("writing offsets")
-        for token, offset in sorted(self.index.items()):
+        for token, offset in sorted(curIndex.items()):
             f.write(token + '\t' + str(offset) + '\n')
-        f.close()
 
-    def write(self, data, file, tier=None):
+        # Clean up
+        f.close()
+        del curIndex
+
+    def write(self, data, file, tierName=None):
         """Helper method to write data in the form of a dict
         with docid keys to disk"""
 
-        if tier:
-            f = gzip.open(cwd + run + '/' + tier + '/' + file + '.gz', 'wt')
+        if self.isTiered:
+            f = gzip.open(cwd + run + '/' + tierName + '/' + file + '.gz', 'wt')
         else:
             f = gzip.open(cwd + run + '/' + file + '.gz', 'wt')
 
@@ -897,40 +954,43 @@ class InvertedIndex:
 
 if __name__ == "__main__":
 
-    # home = expanduser("~")
-    # cwd = home + "/data/"  # working dir for me
     os.chdir('..')      # should be in search-engine/
     cwd = os.getcwd() + '/output/'  # working dir for you
     os.chdir('../A1')  # data in here
-#     print(os.getcwd())
-    index = InvertedIndex(cwd)  # instantiate index
-    index.stopwords()  # read stop word list
-    index.n = 81735 # no documents
 
-    # Build index
+    # Get sys args
     if len(sys.argv) < 2:
         raise ValueError('Must provide run type')
 
-    run = sys.argv[1]  # baseline, etc.
+    runId = sys.argv[1]  # test-run-0      baseline, etc.
+    run = runId[-5:]       # trim to run-0
+
     if not os.path.exists(cwd + run):
         os.makedirs(cwd + run)  # .../output/run-0/...
 
-    # Train with topics list
-    if sys.argv[2] == '-t':
+    # Instantiate index class
+    if 't' in sys.argv[2]:
+        isTiered = True  # this is a two-tiered index
+    else:
+        isTiered = False
+    index = InvertedIndex(81735, isTiered)   # instantiate index with size n
+    index.stopwords()  # read stop word list
 
-        print("training")
-        if len(sys.argv) == 8:
+    # Train/Test query/topics
+    if 'q' in sys.argv[2]:
+
+        print("query/topics test/train")
+        if len(sys.argv) >= 9:
             docScheme = sys.argv[3]     # ddd triplet
             queryScheme = sys.argv[4]   # qqq triplet
             k = int(sys.argv[5])
             topicsList = sys.argv[6]  # 'test-topics.list'
             docsList = sys.argv[7]  # 'documents.list'
             out = cwd + sys.argv[8]  # .../output/.dat file
-
-        if len(sys.argv) == 9:  # tiered
-            isTiered = True
-        else:
-            isTiered = False
+            if len(sys.argv) == 10 and 'pp' in sys.argv[9]:  # pre-process (pp)
+                pp = True
+            else:
+                pp = False
 
         # Load data - tier one and tier two
         offsets = []
@@ -1012,21 +1072,21 @@ if __name__ == "__main__":
 #                     indexFile2 = gzip.open(run + tier + '/index2.gz', 'rt')
                 indexes.append(f)
 #                 indexes.append(indexFile1)
-            with open(cwd + out, 'wt') as results:
+            with open(out, 'wt') as results:
 
                 # Get query terms for `title` field in topics list
                 if isTiered:
                     for query in topicsListFile:
                         # This is score for tiered set up
-                        score = index.cosineScoreTiered(query, docScheme, queryScheme, k)
+                        score = index.cosineScoreTiered(query, docScheme, queryScheme, k, pp)
                 else:
                     for query in topicsListFile:
                         # This is score for tiered set up
-                        score = index.cosineScoreTAAT(query, docScheme, queryScheme, k)
+                        score = index.cosineScoreTAAT(query, docScheme, queryScheme, k, pp)
 
             # Close files
-            for d in dirs:
-                d.close()
+            for f in indexes:
+                f.close()
 
 #     # Fetch posting
 #     if 'f' in sys.argv[2]:
@@ -1046,10 +1106,13 @@ if __name__ == "__main__":
         else:
             pp = False
 #         if len(sys.argv == 5) and sys.argv[4] == 'tiered':
-        if 't' in sys.argv[2]:  # tiered index:  [-bt]
-            isTiered = True
-            index.buildIndex('tier0', pp)  # build tier 0    (titles)
-            index.buildIndex('tier1', pp)  # build tier 1    (text)
+        if isTiered:  # tiered index:  [-bt]
+            if not os.path.exists(cwd + run + '/tier0'):
+                os.makedirs(cwd + run + '/tier0')  # .../output/run0/tier0/...
+            if not os.path.exists(cwd + run + '/tier1'):
+                os.makedirs(cwd + run + '/tier1')  # .../output/run0/tier0/...
+            index.buildIndex(0, 'tier0', pp)  # build tier 0    (titles)
+            index.buildIndex(1, 'tier1', pp)  # build tier 1    (text)
 #             index.calculateDocLen(0, pp)
 #             index.calculateDocLen(0, pp)
 
