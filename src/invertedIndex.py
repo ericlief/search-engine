@@ -5,7 +5,6 @@ import sys
 import os
 import re
 import gzip
-from os.path import expanduser
 from collections import defaultdict
 from array import array
 import gc
@@ -20,23 +19,17 @@ class InvertedIndex:
     functionality such as document lengths, computing scores (tiered and
     untiered"""
 
-    def __init__(self, n=0, isTiered=False):
-        # self.cwd = cwd  # working directory for data
+    def __init__(self, n=0, isTiered=False, nTiers=None):
         self.n = n  # initial size (here static)
         self.isTiered = isTiered  # is this a two-tiered index or not
         if isTiered:
-            nTiers = 2
+            self.nTiers = nTiers
             self.indexes = []
             for i in range(nTiers):
                 self.indexes.append(defaultdict(lambda: array('L')))
             assert (self.indexes[0] is not self.indexes[1])
-            # assert (self.indexes[0] != self.indexes[1])
-
-
-            print("tiered", self.indexes)
         else:
             self.index = defaultdict(lambda: array('L'))  # main index
-
 
     def stopwords(self):
         """Read stopwords from the stopwords file"""
@@ -598,23 +591,6 @@ class InvertedIndex:
         # Parse all documents
         for doc in open('documents.list', 'rt'):
 
-#             print(os.getcwd())
-#             fname = doc.rstrip()  # documents/LN-20020102023.vert
-#             path = cwd + fname
-#             f = gzip.open(path + '.gz', 'rt')
-#
-#             # Truncate prefix of doc id in order to save space: will expand later
-#             did, text = self.parseDoc(f)
-#             if text is None:
-#                 continue
-#             docid = self.truncateDocid(did)
-#
-#             # Parse words in doc and preprocess text
-#             tokens = self.parseWords(text, pp)
-#             if not tokens:
-#                 continue
-#             counts = Counter(tokens)
-
             # First parse and get token counts for each doc
             docid, counts = self.getTokenCounts(doc, tier, pp)
             if docid is None or counts is None:
@@ -647,14 +623,6 @@ class InvertedIndex:
         self.write(maxTF, 'max-tf', tierName)
         del maxTF
 
-#         # Write doc lengths to disk
-#         with gzip.open(cwd + tier + '/lengths.gz', 'wt') as f:
-#             print("writing doc length")
-#             for docid, length in lengths.items():
-#                 f.write(self.expandDocid(docid) + '\t' + str(length) + '\n')
-#
-#         print("Wrote {} doc lengths".format(cnt))
-
         # Get rid of garbage
         gc.collect()
 
@@ -674,7 +642,6 @@ class InvertedIndex:
             docid, text = self.parseDoc(f, title=True)
         else:
             docid, text = self.parseDoc(f)
-
 
         # Truncate prefix of doc id in order to save space: will expand later
         docid = self.truncateDocid(docid)
@@ -701,183 +668,37 @@ class InvertedIndex:
             idPlusTf = self.combineInts(docid, tf)
             if self.isTiered:
                 self.indexes[tier][token].append(idPlusTf)
-                # for i in range(len(self.indexes)):
                 assert self.indexes[0] is not self.indexes[1]
-                assert self.indexes[0] != self.indexes[1]
-
             else:
                 self.index[token].append(idPlusTf)  # append a new entry and postings list
 
     def calculateDocLen(self, counts):
         """Computer and write doc length for scoring"""
 
-#         gc.enable()
-#         # Get token counts if none have already been parsed and counted
-#         if counts is None:
-#             lengths = {}  # main dict
-#             for doc in open(cwd + 'documents.list', 'rt'):
-#                 fname = doc.rstrip()  # documents/LN-20020102023.vert
-#                 path = cwd + fname
-#                 f = gzip.open(path + '.gz', 'rt')
-#                 docid, text = self.parseDoc(f)
-#                 if text is None:
-#                     continue
-#                 docid = self.truncateDocid(docid)
-#                 tokens = self.parseWords(text, pp)
-#                 if not tokens:
-#                     continue
-#                 counts = Counter(tokens)
-
         # Calculate length of doc
         length = 0
         for token, cnt in counts.items():
             length += cnt * cnt
         length = math.sqrt(length)
-#         if counts is None:
-#             del tokens
-#             del counts
-#         gc.collect()
 
         return length
-
-#         if tier:
-#             f = gzip.open(cwd + run + '/' + tier + '/lengths.gz', 'wt')
-#         else:
-#             f = gzip.open(cwd + run + '/lengths.gz', 'wt')
-#
-#         print("writing doc length")
-#         for docid, length in lengths.items():
-#             # print(self.expandDocid(docid) + '\t' + str(length) + '\n')
-#             f.write(self.expandDocid(docid) + '\t' + str(length) + '\n')
-#
-#         # Clean up
-#         del lengths
-#         f.close()
-#         gc.collect()
-
 
     def calculateNumberUniqTerms(self, counts):
         """Compute number of unique terms in a doc, used in cosine score
         calculation."""
 
         return len(counts)
-#         gc.enable()
-#         uniq = {}  # main dict
-#         cnt = 0
-#         for doc in open(cwd + 'documents.list', 'rt'):
-#             fname = doc.rstrip()  # documents/LN-20020102023.vert
-#             path = cwd + fname
-#             f = gzip.open(path + '.gz', 'rt')
-#             docid, text = self.parseDoc(f)
-#             if text is None:
-#                 continue
-#             docid = self.truncateDocid(docid)
-#             tokens = self.parseWords(text, pp)
-#             if not tokens:
-#                 continue
-#             counts = Counter(tokens)
-#             uniq[docid] = len(counts)
-#             print(docid, uniq[docid])
-#             print(counts)
-
-#             del tokens
-#             del counts
-#             gc.collect()
-#             cnt += 1
-#
-#         if tier:
-#             f = gzip.open(cwd + run + '/' + tier + '/uniq.gz', 'wt')
-#         else:
-#             f = gzip.open(cwd + run + '/uniq.gz', 'wt')
-#
-#         print("writing uniq terms")
-#         for docid, c in uniq.items():
-#             f.write(self.expandDocid(docid) + '\t' + str(c) + '\n')
-#
-#         # Clean up
-#         del uniq
-#         f.close()
-#         gc.collect()
 
     def calculateMaxTermFreq(self, counts):
         """Compute and write max term frequency for scoring."""
 
         return counts.most_common(1)[0][1]  # tf of most common element
-#         gc.enable()
-#         max = {}  # main dict
-#         for doc in open(cwd + 'documents.list', 'rt'):
-#             fname = doc.rstrip()  # documents/LN-20020102023.vert
-#             path = cwd + fname
-#             f = gzip.open(path + '.gz', 'rt')
-#             docid, text = self.parseDoc(f)
-#
-#             if text is None:
-#                 continue
-#             docid = self.truncateDocid(docid)
-#             tokens = self.parseWords(text, pp)
-#             if not tokens:
-#                 continue
-#
-#             counts = Counter(tokens)
-#             max[docid] = counts.most_common(1)[0][1]  # tf of most common element
-#             del tokens
-#             del counts
-#             gc.collect()
-#
-#         if tier:
-#             f = gzip.open(cwd + run + '/' + tier + '/max-tf.gz', 'wt')
-#         else:
-#             f = gzip.open(cwd + run + '/max-tf.gz', 'wt')
-#
-#         print("writing max tf")
-#         for docid, tf in max.items():
-# #           print(self.expandDocid(docid) + '\t' + str(length) + '\n')
-#             f.write(self.expandDocid(docid) + '\t' + str(tf) + '\n')
-#
-#          # Clean up
-#         del max
-#         f.close()
-#         gc.collect()
 
     def calculateAveTermFreq(self, counts):
         """Compute average term frequency in doc, used for scoring."""
 
         s = sum([c for t, c in counts.items()])  # sum tfs
         return s / float(len(counts))
-#         gc.enable()
-#         aveTF = {}  # ave tfs per doc
-#         for doc in open(cwd + 'documents.list', 'rt'):
-#             fname = doc.rstrip()  # documents/LN-20020102023.vert
-#             path = cwd + fname
-#             f = gzip.open(path + '.gz', 'rt')
-#             docid, text = self.parseDoc(f)
-#             if text is None:
-#                 continue
-#             docid = self.truncateDocid(docid)
-#             tokens = self.parseWords(text, pp)
-#             if not tokens:
-#                 continue
-#             counts = Counter(tokens)
-#             s = sum([c for t, c in counts.items()])  # sum tfs
-#             aveTF[docid] = s / float(len(counts))
-#             del tokens
-#             del counts
-#             del s
-#             gc.collect()
-#
-#         if tier:
-#             f = gzip.open(cwd + run + '/' + tier + '/ave-tf.gz', 'wt')
-#         else:
-#             f = gzip.open(cwd + run + '/ave-tf.gz', 'wt')
-#
-#         print("writing ave tf")
-#         for docid, ave in aveTF.items():
-#             f.write(self.expandDocid(docid) + '\t' + str(ave) + '\n')
-#
-#         # Clean up
-#         del aveTF
-#         f.close()
-#         gc.collect()
 
     def writeIndex(self, tier=None, tierName=None):
         """Helper method to write index to disk. Once written
@@ -940,18 +761,6 @@ class InvertedIndex:
         for docid, val in data.items():
             f.write(self.expandDocid(docid) + '\t' + str(val) + '\n')
 
-#     def writeDocLengths(self, tier=None):
-#         """Helper method to write doc lengths to disk"""
-#
-#         if tier:
-#             f = gzip.open(cwd + run + '/' + tier + '/lengths.gz', 'wt')
-#         else:
-#             f = gzip.open(cwd + run + '/lengths.gz', 'wt')
-#
-#         print("writing doc length")
-#         for docid, length in self.lengths.items():
-#             f.write(self.expandDocid(docid) + '\t' + str(length) + '\n')
-
 if __name__ == "__main__":
 
     os.chdir('..')      # should be in search-engine/
@@ -971,9 +780,11 @@ if __name__ == "__main__":
     # Instantiate index class
     if 't' in sys.argv[2]:
         isTiered = True  # this is a two-tiered index
+        nTiers = 2
     else:
         isTiered = False
-    index = InvertedIndex(81735, isTiered)   # instantiate index with size n
+        nTiers = None
+    index = InvertedIndex(81735, isTiered, nTiers)   # instantiate index with size n, nTiers
     index.stopwords()  # read stop word list
 
     # Train/Test query/topics
@@ -1088,16 +899,6 @@ if __name__ == "__main__":
             for f in indexes:
                 f.close()
 
-#     # Fetch posting
-#     if 'f' in sys.argv[2]:
-#         offset = int(sys.argv[2])
-#         if len(sys.argv) == 4:
-#             f = sys.argv[3]
-#             index.getPostings(offset, f)
-#         else:
-#             f = cwd + run + '/index.gz'
-#             index.getPostings(offset, f)
-
     # Build index
     # USAGE: python3 invertedIndex.py {-b, -bt} [-pp]
     if 'b' in sys.argv[2]:
@@ -1105,7 +906,7 @@ if __name__ == "__main__":
             pp = True
         else:
             pp = False
-#         if len(sys.argv == 5) and sys.argv[4] == 'tiered':
+
         if isTiered:  # tiered index:  [-bt]
             if not os.path.exists(cwd + run + '/tier0'):
                 os.makedirs(cwd + run + '/tier0')  # .../output/run0/tier0/...
@@ -1113,106 +914,6 @@ if __name__ == "__main__":
                 os.makedirs(cwd + run + '/tier1')  # .../output/run0/tier0/...
             index.buildIndex(0, 'tier0', pp)  # build tier 0    (titles)
             index.buildIndex(1, 'tier1', pp)  # build tier 1    (text)
-#             index.calculateDocLen(0, pp)
-#             index.calculateDocLen(0, pp)
 
         else:
             index.buildIndex(pp=pp)
-
-#     # Calculate doc lengths
-#     if 'l' in sys.argv[2]:
-#         if len(sys.argv == 4) and 'pp' in sys.argv[3]:  # pre-process text
-#             pp = True
-#         else:
-#             pp = False
-#         if len(sys.argv == 5) and sys.argv[4] == 'tiered':
-#             isTiered = True
-#         index.calculateDocLen(tier, pp)
-#
-#     # Calculate num unique terms
-#     if 'u' in sys.argv[2]:
-#         index.calculateNumberUniqTerms(tier, pp)
-#
-#     # Calculate max lengh for augmented tf
-#     if 'm' in sys.argv[2]:
-#         index.calculateMaxTermFreq(tier, pp)
-#
-#     # Calculate average term frequency
-#     if 'a' in sys.argv[2]:
-#         index.calculateAveTermFreq(tier, pp)
-
-#
-#         offsets = []
-#         with gzip.open(cwd + run + '/offsets1.gz', 'rt') as f:
-#             off = {}
-#             for line in f:
-#                 word, offset = line.rstrip().split()
-#                 off[word] = int(offset)
-#             offsets.append(off)
-#
-#         with gzip.open(cwd + run + '/offsets2.gz', 'rt') as f:
-#             off = {}
-#             for line in f:
-#                 word, offset = line.rstrip().split()
-#                 off[word] = int(offset)
-#             offsets.append(off)
-#
-#         docLengths = []
-#         with gzip.open(cwd + run + '/lengths1.gz', 'rt') as f:
-#             dl = {}
-#             for line in f:
-#                 doc, length = line.rstrip().split()
-#                 dl[doc] = float(length)
-#             docLengths.append(dl)
-#
-#         with gzip.open(cwd + run + '/lengths2.gz', 'rt') as f:
-#             dl = {}
-#             for line in f:
-#                 doc, length = line.rstrip().split()
-#                 dl[doc] = float(length)
-#             docLengths.append(dl)
-#
-#         maxTF = []
-#         with gzip.open(cwd + run + '/max-tf1.gz', 'rt') as f:
-#             mtf = {}
-#             for line in f:
-#                 doc, tf = line.rstrip().split()
-#                 mtf[doc] = int(tf)
-#             maxTF.append(mtf)
-#
-#         with gzip.open(cwd + run + '/max-tf2.gz', 'rt') as f:
-#             mtf = {}
-#             for line in f:
-#                 doc, tf = line.rstrip().split()
-#                 mtf[doc] = int(tf)
-#             maxTF.append(mtf)
-#
-#         aveTF = []
-#         with gzip.open(cwd + run + '/ave-tf1.gz', 'rt') as f:
-#             atf = {}
-#             for line in f:
-#                 doc, tf = line.rstrip().split()
-#                 atf[doc] = float(tf)
-#             aveTF.append(atf)
-#
-#         with gzip.open(cwd + run + '/ave-tf2.gz', 'rt') as f:
-#             atf = {}
-#             for line in f:
-#                 doc, tf = line.rstrip().split()
-#                 atf[doc] = float(tf)
-#             aveTF.append(atf)
-#
-#         uniq = []
-#         with gzip.open(cwd + run + '/uniq1.gz', 'rt') as f:
-#             un = {}
-#             for line in f:
-#                 doc, u = line.rstrip().split()
-#                 un[doc] = int(u)
-#             uniq.append(un)
-#
-#         with gzip.open(cwd + run + '/uniq2.gz', 'rt') as f:
-#             un = {}
-#             for line in f:
-#                 doc, u = line.rstrip().split()
-#                 un[doc] = int(u)
-#             uniq.append(un)
