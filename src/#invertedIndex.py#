@@ -63,8 +63,8 @@ class InvertedIndex:
         # Normalize: lowercase, filter stopwords
         if pp:
             # tokens = [token.lower() for token in tokens if token not in self.stopwords]
-            tokens = [token.lower() for token in tokens]
 
+            tokens = [token.lower() for token in tokens]
         # print(tokens)
         return tokens
 
