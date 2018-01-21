@@ -28,7 +28,7 @@ if [ $RUN == 'run-0' ]; then
 elif [ $RUN == 'run-1' ]; then
 
     # Run python script for run1
-    python3 invertedIndex.py $RUN_ID -q ltu nnn 750 $TOPICS $DOCS $OUT -pp   
+    python3 invertedIndex.py $RUN_ID -q ltu nnn 1000 $TOPICS $DOCS $OUT -pp   
 
 elif [ $RUN == 'run-2' ]; then
 
